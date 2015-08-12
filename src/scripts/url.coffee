@@ -5,7 +5,8 @@
 #   "cheerio": "0.17.0"
 #
 # Configuration:
-#   HUBOT_URL_IGNORE_PATTERNS
+#   HUBOT_URL_IGNORE_PATTERNS - a regexp to ignore certain urls
+#   HUBOT_URL_IGNORE_USERS - ignore from specific users (e.g., JIRA)
 #
 # Commands:
 #   ^https?://.*$ - respond title and og:image
@@ -33,24 +34,33 @@ parseOgp = ($) ->
   ogp
 
 module.exports = (robot) ->
+  ignore_users = process.env.HUBOT_URL_IGNORE_USERS.split(',') or '[]'
+  ignore_pattern = process.env.HUBOT_URL_IGNORE_PATTERNS
 
   robot.hear /^(https?:\/\/.*)$/, (msg) ->
 
     url = msg.match[1]
 
-    patterns = process.env.HUBOT_URL_IGNORE_PATTERNS or '[]'
-    patterns = JSON.parse patterns
-    patterns = patterns.map (p) -> new RegExp p
-    return if patterns.some (p) -> p.test(url)
+    # ignore users
+    username = msg.message.user.name
+    if username in ignore_users
+      console.log 'ignoring user due to blacklist: ', username
+      return
 
-    msg
-      .http(url)
-      .get() (err, res, body) ->
-        throw err if err
-        $ = cheerio.load body
-        title = $('title').text()
-        ogp = parseOgp $
-        t = title or ogp.title or null
-        i = ogp.image or null
-        msg.send(t) if t?
-        msg.send(i) if i?
+    # filter out some common files first
+    ignore = url.match(/\.(png|jpg|jpeg|gif|txt|zip|tar\.bz|js|css)/)
+    if !ignore && ignore_pattern
+      ignore = url.match(ignore_pattern)
+
+    unless ignore
+      msg
+        .http(url)
+        .get() (err, res, body) ->
+          throw err if err
+          $ = cheerio.load body
+          title = $('title').text()
+          ogp = parseOgp $
+          t = title or ogp.title or null
+          i = ogp.image or null
+          msg.send(t) if t?
+          msg.send(i) if i?
